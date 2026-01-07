@@ -44,10 +44,10 @@ CREATE TABLE departamentos (
    ============================================================ */
 
 /* Insertar tres empleados y dos departamentos */
-INSERT INTO empleados (nombre, edad, salario) VALUES
- ('Patricia',36, 1490),
- ('Marta',29, 1670),
- ('Geetika',57, 1900);
+INSERT INTO empleados (nombre, edad, salario, direccion) VALUES
+ ('Patricia',36, 1490, 'Calle Gran Canaria 32'),
+ ('Marta',29, 1670, 'Calle Tenerife 67'),
+ ('Geetika',57, 1900, 'Calle La Gomera 4');
 
 
  INSERT INTO departamentos (nombre, id_empleado) VALUES
@@ -59,7 +59,7 @@ INSERT INTO empleados (nombre, edad, salario) VALUES
 
 /* Modifica el salario de un empleado */
 UPDATE empleados
-SET salario = 1700
+SET salario = 2500
 WHERE id = 2;
 
 
@@ -119,7 +119,7 @@ JOIN departamentos d ON e.id = d.id_empleado;
    ============================================================ */
 
 /* Crear un usuario llamado "usuario1" (ajusta la contraseña en producción) */
-CREATE USER IF NOT EXISTS 'usuario1'@'%' IDENTIFIED BY 'Passw0rd!';
+CREATE USER IF NOT EXISTS 'usuario1'@'%' IDENTIFIED BY '12345';
 
 
 
@@ -146,8 +146,8 @@ START TRANSACTION;
 
 
 /* Inserta un nuevo empleado */
-INSERT INTO empleados (nombre, edad, salario) VALUES
- ('Xavier', 32, 1550);
+INSERT INTO empleados (nombre, edad, salario, direccion) VALUES
+ ('Xavier', 32, 1550, 'Calle La Palma 81');
 
 
 
@@ -164,7 +164,7 @@ WHERE id = 4;
 
 
 /* Revierte los cambios hasta el "SAVEPOINT" */
-ROLLBACK TO punto1;
+ROLLBACK TO SAVEPOINT punto1;
 
 
 
@@ -185,7 +185,7 @@ CREATE VIEW vista_empleados_activos AS
 SELECT e.id, e.nombre, e.edad, e.salario, d.nombre AS Departamento
 FROM empleados e
 JOIN departamentos d ON e.id = d.id_empleado
-WHERE salario >= 1500;
+WHERE e.salario >= 1500;
 
 
 
@@ -228,17 +228,19 @@ CREATE ROLE rol_editor_empleados;
 /* Asignar permisos a los roles creados */
 
 /* Permisos para "rol_consulta" - SELECT */
-GRANT SELECT ON vista_empleados_activos TO rol_consulta;
+GRANT SELECT ON empresa_technova.vista_empleados_activos TO rol_consulta;
 
-GRANT SELECT ON vista_resumen_salarios TO rol_consulta;
+GRANT SELECT ON empresa_technova.vista_resumen_salarios TO rol_consulta;
 
-GRANT SELECT ON empleados TO rol_consulta;
+GRANT SELECT ON empresa_technova.empleados TO rol_consulta;
 
-GRANT SELECT ON departamentos TO rol_consulta;
+GRANT SELECT ON empresa_technova.departamentos TO rol_consulta;
+
+/* También se puede usar: GRANT SELECT ON empresa_technova.* TO rol_consulta; */
 
 
 /* Permisos para "rol_editor_empleados" - SELECT, INSERT, UPDATE */
-GRANT SELECT, INSERT, UPDATE ON empleados TO rol_editor_empleados;
+GRANT SELECT, INSERT, UPDATE ON empresa_technova.empleados TO rol_editor_empleados;
 
 
 
@@ -247,7 +249,7 @@ GRANT rol_consulta TO 'usuario1'@'%';
 
 
 /* Crea un nuevo usuario "usuario2" y asigna el rol "rol_editor_empleados" (ajusta la contraseña) */
-CREATE USER IF NOT EXISTS 'usuario2'@'%' IDENTIFIED BY 'Passw0rd!';
+CREATE USER IF NOT EXISTS 'usuario2'@'%' IDENTIFIED BY '12345';
 
 GRANT rol_editor_empleados TO 'usuario2'@'%';
 
@@ -268,15 +270,15 @@ REVOKE rol_consulta FROM 'usuario1'@'%';
 
 
 /* Revoca de los roles, cualquier permisos asignado sobre las vistas y tablas */
-REVOKE SELECT, INSERT, UPDATE ON empleados FROM rol_editor_empleados;
+REVOKE SELECT, INSERT, UPDATE ON empresa_technova.empleados FROM rol_editor_empleados;
 
-REVOKE SELECT ON vista_empleados_activos FROM rol_consulta;
+REVOKE SELECT ON empresa_technova.vista_empleados_activos FROM rol_consulta;
 
-REVOKE SELECT ON vista_resumen_salarios FROM rol_consulta;
+REVOKE SELECT ON empresa_technova.vista_resumen_salarios FROM rol_consulta;
 
-REVOKE SELECT ON empleados FROM rol_consulta;
+REVOKE SELECT ON empresa_technova.empleados FROM rol_consulta;
 
-REVOKE SELECT ON departamentos FROM rol_consulta;
+REVOKE SELECT ON empresa_technova.departamentos FROM rol_consulta;
 
 
 
@@ -308,12 +310,13 @@ CREATE TABLE empleados_salario_log (
 
 /* Crear un "TRIGGER AFTER UPDATE" sobre la tabla "empleados" e insertar un registro en empleados_salario_log con id_empleado, salario_anterior, salario_nuevo, fecha_cambio y usuario_bd */
 DELIMITER //
-CREATE TRIGGER trigger_actualizar_salario
+CREATE TRIGGER trigger_auditoria_salario
 AFTER UPDATE ON empleados
 FOR EACH ROW
 BEGIN
+  IF OLD.salario <> NEW.salario THEN
   INSERT INTO empleados_salario_log (id_empleado, salario_anterior, salario_nuevo, fecha_cambio, usuario_bd)
-    VALUES (OLD.id, OLD.salario, NEW.salario, NOW(), USER());
+    VALUES (OLD.id, OLD.salario, NEW.salario, CURRENT_TIMESTAMP(), USER());
 END;
 //
 DELIMITER ;
@@ -329,7 +332,7 @@ UPDATE empleados SET salario = 2500 WHERE id = 1;
 
 /* Verificar que el salario del nuevo empleado sea como mínimo 1000. Si no se cumple, lanzar un error que impida la inserción */
 DELIMITER //
-CREATE TRIGGER validar_salario_before_insert
+CREATE TRIGGER tr_salario_minimo
 BEFORE INSERT ON empleados
 FOR EACH ROW
 BEGIN
@@ -341,6 +344,21 @@ END;
 DELIMITER ;
 
 
+/* Otra forma sería:
+DELIMITER //
+CREATE TRIGGER tr_salario_minimo
+BEFORE INSERT ON empleados
+FOR EACH ROW
+BEGIN
+  IF NEW.salario < 1000 THEN
+    SET NEW.salario = 1000;
+  END IF;
+END;
+//
+DELIMITER ;
+*/
+
+
 
 /* Prueba el trigger intentando insertar un empleado con salario de 800 (debe fallar por validación) */
 INSERT INTO empleados (nombre, edad, salario) VALUES ('Juan', 30, 800);
@@ -349,7 +367,7 @@ INSERT INTO empleados (nombre, edad, salario) VALUES ('Juan', 30, 800);
 
 /* Crear la tabla para empleados borrados y un trigger BEFORE DELETE que copie los datos */
 CREATE TABLE IF NOT EXISTS empleados_borrados (
-  id INT PRIMARY KEY,
+  id INT PRIMARY KEY AUTO_INCREMENT,
   nombre VARCHAR(100),
   edad INT,
   salario DECIMAL(10,2),
@@ -357,12 +375,12 @@ CREATE TABLE IF NOT EXISTS empleados_borrados (
 );
 
 DELIMITER //
-CREATE TRIGGER trigger_eliminar_empleado
+CREATE TRIGGER tr_empleado_eliminado
 BEFORE DELETE ON empleados
 FOR EACH ROW
 BEGIN
   INSERT INTO empleados_borrados (id, nombre, edad, salario, fecha_borrado)
-    VALUES (OLD.id, OLD.nombre, OLD.edad, OLD.salario, NOW());
+    VALUES (OLD.id, OLD.nombre, OLD.edad, OLD.salario, CURRENT_TIMESTAMP());
 END;
 //
 DELIMITER ;
