@@ -50,10 +50,10 @@ INSERT INTO empleados (nombre, edad, salario, direccion) VALUES
  ('Geetika',57, 1900, 'Calle La Gomera 4');
 
 
- INSERT INTO departamentos (nombre, id_empleado) VALUES
+INSERT INTO departamentos (nombre, id_empleado) VALUES
  ('Recursos Humanos', 3),
  ('Marketing', 2),
- ('Recursos Humanos', 1);
+ ('Ventas', 1);
 
 
 
@@ -82,9 +82,9 @@ SELECT * FROM empleados;
 
 
 
-/* Muestra el nombre y salario de los empleados menores de 30 años, ordenados por salario descendente */
+/* Muestra el nombre y salario de los empleados mayores de 30 años, ordenados por salario descendente */
 SELECT nombre, salario FROM empleados
-WHERE edad < 30
+WHERE edad > 30
 ORDER BY salario DESC;
 
 
@@ -124,12 +124,12 @@ CREATE USER IF NOT EXISTS 'usuario1'@'%' IDENTIFIED BY '12345';
 
 
 /* Concede al "usuario1" los permisos de SELECT e INSERT sobre la tabla "empleados" */
-GRANT SELECT, INSERT ON empresa_technova.empleados TO 'usuario1'@'%'; 
+GRANT SELECT, INSERT ON empleados TO 'usuario1'@'%'; 
 
 
 
 /* Revoca el permiso de INSERT del "usuario1", manteniendo el de SELECT */
-REVOKE INSERT ON empresa_technova.empleados FROM 'usuario1'@'%';
+REVOKE INSERT ON empleados FROM 'usuario1'@'%';
 
 
 
@@ -218,29 +218,29 @@ WHERE Salario_medio > 2000;
    ============================================================ */
 
 /* Crear dos roles: "rol_consulta" y "rol_editor_empleados" */
-CREATE ROLE rol_consulta;
+CREATE ROLE IF NOT EXISTS rol_consulta;
 
 
-CREATE ROLE rol_editor_empleados;
+CREATE ROLE IF NOT EXISTS rol_editor_empleados;
 
 
 
 /* Asignar permisos a los roles creados */
 
 /* Permisos para "rol_consulta" - SELECT */
-GRANT SELECT ON empresa_technova.vista_empleados_activos TO rol_consulta;
+GRANT SELECT ON vista_empleados_activos TO rol_consulta;
 
-GRANT SELECT ON empresa_technova.vista_resumen_salarios TO rol_consulta;
+GRANT SELECT ON vista_resumen_salarios TO rol_consulta;
 
-GRANT SELECT ON empresa_technova.empleados TO rol_consulta;
+GRANT SELECT ON empleados TO rol_consulta;
 
-GRANT SELECT ON empresa_technova.departamentos TO rol_consulta;
+GRANT SELECT ON departamentos TO rol_consulta;
 
-/* También se puede usar: GRANT SELECT ON empresa_technova.* TO rol_consulta; */
+/* También se podría usar: GRANT SELECT ON empresa_technova.* TO rol_consulta; */
 
 
 /* Permisos para "rol_editor_empleados" - SELECT, INSERT, UPDATE */
-GRANT SELECT, INSERT, UPDATE ON empresa_technova.empleados TO rol_editor_empleados;
+GRANT SELECT, INSERT, UPDATE ON empleados TO rol_editor_empleados;
 
 
 
@@ -270,16 +270,17 @@ REVOKE rol_consulta FROM 'usuario1'@'%';
 
 
 /* Revoca de los roles, cualquier permisos asignado sobre las vistas y tablas */
-REVOKE SELECT, INSERT, UPDATE ON empresa_technova.empleados FROM rol_editor_empleados;
+REVOKE SELECT, INSERT, UPDATE ON empleados FROM rol_editor_empleados;
 
-REVOKE SELECT ON empresa_technova.vista_empleados_activos FROM rol_consulta;
+REVOKE SELECT ON vista_empleados_activos FROM rol_consulta;
 
-REVOKE SELECT ON empresa_technova.vista_resumen_salarios FROM rol_consulta;
+REVOKE SELECT ON vista_resumen_salarios FROM rol_consulta;
 
-REVOKE SELECT ON empresa_technova.empleados FROM rol_consulta;
+REVOKE SELECT ON empleados FROM rol_consulta;
 
-REVOKE SELECT ON empresa_technova.departamentos FROM rol_consulta;
+REVOKE SELECT ON departamentos FROM rol_consulta;
 
+/* También se podría usar: REVOKE SELECT ON empresa_technova.* FROM rol_consulta; */
 
 
 /* Elimina los roles creados */
@@ -310,13 +311,14 @@ CREATE TABLE empleados_salario_log (
 
 /* Crear un "TRIGGER AFTER UPDATE" sobre la tabla "empleados" e insertar un registro en empleados_salario_log con id_empleado, salario_anterior, salario_nuevo, fecha_cambio y usuario_bd */
 DELIMITER //
-CREATE TRIGGER trigger_auditoria_salario
+CREATE TRIGGER tr_auditoria_salario
 AFTER UPDATE ON empleados
 FOR EACH ROW
 BEGIN
   IF OLD.salario <> NEW.salario THEN
   INSERT INTO empleados_salario_log (id_empleado, salario_anterior, salario_nuevo, fecha_cambio, usuario_bd)
     VALUES (OLD.id, OLD.salario, NEW.salario, CURRENT_TIMESTAMP(), USER());
+  END IF;
 END;
 //
 DELIMITER ;
@@ -324,11 +326,13 @@ DELIMITER ;
 
 
 /*Realizar un UPDATE de salario sobre algún empleado y verificar que el trigger ha insertado el registro en la tabla de log */
-UPDATE empleados SET salario = 2500 WHERE id = 1;
+UPDATE empleados 
+SET salario = 2500 
+WHERE id = 2;
 
 
 
-/* Crear un "TRIGGER BEFORE DELETE" sobre la tabla "empleados" */
+/* Crear un "TRIGGER BEFORE INSERT" sobre la tabla "empleados" */
 
 /* Verificar que el salario del nuevo empleado sea como mínimo 1000. Si no se cumple, lanzar un error que impida la inserción */
 DELIMITER //
@@ -337,7 +341,8 @@ BEFORE INSERT ON empleados
 FOR EACH ROW
 BEGIN
   IF NEW.salario < 1000 THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se permite insertar empleados con salario menor a 1000.';
+    SIGNAL SQLSTATE '45000' 
+    SET MESSAGE_TEXT = 'No se permite insertar empleados con salario menor a 1000.';
   END IF;
 END;
 //
@@ -367,7 +372,8 @@ INSERT INTO empleados (nombre, edad, salario) VALUES ('Juan', 30, 800);
 
 /* Crear la tabla para empleados borrados y un trigger BEFORE DELETE que copie los datos */
 CREATE TABLE IF NOT EXISTS empleados_borrados (
-  id INT PRIMARY KEY AUTO_INCREMENT,
+  id_borrado INT PRIMARY KEY AUTO_INCREMENT,
+  id_empleado INT,
   nombre VARCHAR(100),
   edad INT,
   salario DECIMAL(10,2),
@@ -379,7 +385,7 @@ CREATE TRIGGER tr_empleado_eliminado
 BEFORE DELETE ON empleados
 FOR EACH ROW
 BEGIN
-  INSERT INTO empleados_borrados (id, nombre, edad, salario, fecha_borrado)
+  INSERT INTO empleados_borrados (id_empleado, nombre, edad, salario, fecha_borrado)
     VALUES (OLD.id, OLD.nombre, OLD.edad, OLD.salario, CURRENT_TIMESTAMP());
 END;
 //
@@ -388,9 +394,9 @@ DELIMITER ;
 
 
 /* Eliminar un empleado y comprobar qué aparece en "empleados_borrados" */
-DELETE FROM empleados WHERE id = 1;
+DELETE FROM empleados WHERE id = 3;
 
-
+SELECT * FROM empleados_borrados;
 
 
 
@@ -400,30 +406,32 @@ DELETE FROM empleados WHERE id = 1;
    ============================================================ */
 
 /* Crear un índice llamado "idx_empleados_edad" sobre la columna "edad" de la tabla "empleados" */
-CREATE INDEX idx_empleados_edad ON empleados (edad);
-
-
 
 /* Realizar una consulta que agrupe por edad y observar el plan de ejecución antes y después de crear el índice */
 SELECT edad, COUNT(*) FROM empleados 
 GROUP BY edad;
 
 
+CREATE INDEX idx_empleados_edad ON empleados (edad);
+
+
+SELECT edad, COUNT(*) FROM empleados 
+GROUP BY edad;
+
+
 
 /* Crear un índice llamado "idx_empleados_salario" sobre las columnas "salario" de la tabla "empleados" */
-CREATE INDEX idx_empleados_salario ON empleados (salario);
-
-
 
 /* Realizar varias consultas que filtren por rangos de salario y observar la mejora */
 SELECT * FROM empleados 
 WHERE salario BETWEEN 1000 AND 2000;
 
-SELECT * FROM empleados 
-WHERE salario > 2500;
+
+CREATE INDEX idx_empleados_salario ON empleados (salario);
+
 
 SELECT * FROM empleados 
-WHERE salario < 1500;
+WHERE salario BETWEEN 1000 AND 2000;
 
 
 
@@ -433,14 +441,11 @@ CREATE UNIQUE INDEX idx_departamentos_nombre_unique ON departamentos (nombre);
 
 
 /* Intentar insertar un departamento con un nombre ya existente y comprobar que el SGBD no lo permite */
-INSERT INTO departamentos (nombre) VALUES ('Ventas');
+INSERT INTO departamentos (nombre) VALUES ('Marketing');
 
 
 
 /* Crear un índice compuesto llamado "idx_empleados_edad_salario" sobre las columnas "edad" y "salario" de la tabla "empleados" */
-CREATE INDEX idx_empleados_edad_salario ON empleados (edad, salario);
-
-
 
 /* Realizar una consulta que filtre por edad y ordene por salario para comprobar el uso del índice*/
 SELECT * FROM empleados 
@@ -448,29 +453,14 @@ WHERE edad > 25
 ORDER BY salario;
 
 
+CREATE INDEX idx_empleados_edad_salario ON empleados (edad, salario);
 
 
-
-
-/* ============================================================
-   10) COPIAS DE SEGURIDAD Y RESTAURACIÓN (BACKUP & RECOVERY)
-   ============================================================ */
-
-   /* Define y documenta cómo harías las copias de seguridad de la base de datos "empresa_technova" */
-
-
-
-/*Escribe el comando que utiliarías para restaurar la "empresa_technova" a partir del fichero de backup generado */
-
-
-
-/*Explica brevemente en qué situaciones usarías esta restauración */
-
+SELECT * FROM empleados 
+WHERE edad > 25 
+ORDER BY salario;
 
 
 -- ==============================================
 -- FIN PROYECTO SQL - GESTIÓN DE BASES DE DATOS EMPRESARIAL --
 -- ==============================================   
-
-
-
