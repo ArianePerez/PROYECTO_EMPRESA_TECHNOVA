@@ -461,6 +461,7 @@ WHERE edad > 25
 ORDER BY salario;
 
 
+
 -- ==============================================
 -- FIN PROYECTO SQL - GESTIÓN DE BASES DE DATOS EMPRESARIAL --
 -- ==============================================   
